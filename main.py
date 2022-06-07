@@ -146,9 +146,9 @@ def set_seed(seed):
 
 
 def load_data(args):
-    with open("data/c/yes.json", "r") as f:
+    with open("data/classification/yes.json", "r") as f:
         y = json.load(f)
-    with open("data/c/no.json", "r") as f:
+    with open("data/classification/no.json", "r") as f:
         n = json.load(f)
     random.shuffle(y)
     random.shuffle(n)
