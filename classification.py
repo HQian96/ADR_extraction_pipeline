@@ -130,13 +130,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--clip",
-        default=0.25,
-        type=float,
-        help="grad norm clipping to avoid gradient explosion",
-    )
-
-    parser.add_argument(
         "--max_seq_len", default=128, type=int, help="maximum length of sequence"
     )
 
@@ -193,10 +186,6 @@ if __name__ == "__main__":
             loss.backward()
 
             train_loss += loss.item()
-            if args.clip != 0:
-                torch.nn.utils.clip_grad_norm_(
-                    parameters=model.parameters(), max_norm=args.clip
-                )
             optimizer.step()
 
             if steps % args.steps == 0:

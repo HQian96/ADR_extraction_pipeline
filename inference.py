@@ -244,4 +244,4 @@ if __name__ == "__main__":
         pubmed = [line.rstrip("\n") for line in f]
     results = inference_classifier(args, pubmed)
     results = inference_PFN_2(args, results)
-    json.dump(results, open("data/" + args.model_file + "_results.json", "w"))
+    json.dump(results, open(args.model_file + "_results.json", "w"))
