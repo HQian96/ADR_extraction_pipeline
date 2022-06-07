@@ -11,7 +11,6 @@ import os
 import logging
 import argparse
 import sys
-import pickle
 from utils.metrics import *
 from model.pfn import *
 from model.classifier import *
@@ -203,7 +202,9 @@ def load_data(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--data", default="ADE", type=str, help="which dataset to use")
+    parser.add_argument(
+        "--data", default="both", type=str, help="which dataset to use in training"
+    )
 
     parser.add_argument(
         "--hidden_size",
@@ -218,7 +219,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--epoch_c",
-        default=5,
+        default=10,
         type=int,
         help="number of training epoch of the classifier",
     )
@@ -242,14 +243,6 @@ if __name__ == "__main__":
         default=10,
         type=int,
         help="number of samples in one testing batch",
-    )
-
-    parser.add_argument(
-        "--do_train", action="store_true", help="whether or not to train from scratch"
-    )
-
-    parser.add_argument(
-        "--do_eval", action="store_true", help="whether or not to evaluate the model"
     )
 
     parser.add_argument(
@@ -306,13 +299,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--clip_c",
-        default=0.25,
-        type=float,
-        help="grad norm clipping to avoid gradient explosion",
-    )
-
-    parser.add_argument(
         "--max_seq_len", default=128, type=int, help="maximum length of sequence"
     )
 
@@ -348,7 +334,7 @@ if __name__ == "__main__":
     model = classifier(input_size, args)
     model.to(device)
     bce = nn.BCELoss()
-    optimizer = optim.Adam(
+    optimizer = optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay
     )
     best_result = 0
@@ -369,20 +355,9 @@ if __name__ == "__main__":
             loss_c.backward()
 
             train_loss += loss_c.item()
-            if args.clip_c != 0:
-                torch.nn.utils.clip_grad_norm_(
-                    parameters=model.parameters(), max_norm=args.clip_c
-                )
             optimizer.step()
-            # test = []
-            # for param in model.parameters():
-            #         try:
-            #             test +=[torch.mean(param.grad)]
-            #         except:
-            #             pass
-            # print(max(test),test)
+
             if steps % args.steps == 0:
-                # print(steps)
                 logger.info(
                     "Epoch: {}, step: {} / {}, loss = {:.4f}".format(
                         epoch, steps, len(train_batch), train_loss / steps
@@ -418,9 +393,9 @@ if __name__ == "__main__":
     )
     model_file = args.output_file + ".pt"
 
-    with open("data/" + args.data + "/ner2idx.json", "r") as f:
+    with open("data/ADE/ner2idx.json", "r") as f:
         ner2idx = json.load(f)
-    with open("data/" + args.data + "/rel2idx.json", "r") as f:
+    with open("data/ADE/rel2idx.json", "r") as f:
         rel2idx = json.load(f)
 
     train_batch, test_batch, dev_batch = dataloader(args, ner2idx, rel2idx)
@@ -431,7 +406,7 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(output_dir + "/" + model_file_c), strict=False)
     model.to(device)
 
-    optimizer = optim.Adam(
+    optimizer = optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay
     )
 
@@ -477,13 +452,6 @@ if __name__ == "__main__":
                     parameters=model.parameters(), max_norm=args.clip
                 )
             optimizer.step()
-            # test = []
-            # for param in model.parameters():
-            #         try:
-            #             test +=[torch.mean(param.grad)]
-            #         except:
-            #             pass
-            # print(max(test),test)
 
             if steps % args.steps == 0:
                 logger.info(

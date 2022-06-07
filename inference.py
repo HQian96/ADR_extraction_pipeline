@@ -207,18 +207,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_file", type=str, required=True, help="loading pre-trained model files"
     )
+
     parser.add_argument(
         "--hidden_size", type=int, default=300, help="hidden size of the model"
     )
+
     parser.add_argument(
         "--dropconnect", type=float, default=0.1, help="dropconnect on encoder"
     )
+
     parser.add_argument(
         "--dropout",
         type=float,
         default=0.1,
         help="dropout on word embedding and task units",
     )
+
     parser.add_argument(
         "--embed_mode",
         default=None,
@@ -226,8 +230,17 @@ if __name__ == "__main__":
         required=True,
         help="BERT or ALBERT pretrained embedding",
     )
+
+    parser.add_argument(
+        "--text",
+        type=str,
+        default="data/pubmed.txt",
+        required=True,
+        help="Path to the text file for inference",
+    )
+
     args = parser.parse_args()
-    with open("data/pubmed.txt", "r", encoding="utf-8") as f:
+    with open(args.text, "r", encoding="utf-8") as f:
         pubmed = [line.rstrip("\n") for line in f]
     results = inference_classifier(args, pubmed)
     results = inference_PFN_2(args, results)

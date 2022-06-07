@@ -121,7 +121,7 @@ class dataprocess(Dataset):
         )
 
 
-def ade_preprocess(data, dataset):
+def ade_preprocess(data):
     processed = []
     for dic in data:
         text = dic["tokens"]
@@ -143,15 +143,14 @@ def ade_preprocess(data, dataset):
             rc_tail_labels += [subj["end"] - 1, obj["end"] - 1, re["type"]]
 
         overlap_pattern = False
-        if dataset == "ADE":
-            for i in range(0, len(ner_labels), 3):
-                for j in range(i + 3, len(ner_labels), 3):
-                    if is_overlap(
-                        [ner_labels[i], ner_labels[i + 1]],
-                        [ner_labels[j], ner_labels[j + 1]],
-                    ):
-                        overlap_pattern = True
-                        break
+        for i in range(0, len(ner_labels), 3):
+            for j in range(i + 3, len(ner_labels), 3):
+                if is_overlap(
+                    [ner_labels[i], ner_labels[i + 1]],
+                    [ner_labels[j], ner_labels[j + 1]],
+                ):
+                    overlap_pattern = True
+                    break
         if overlap_pattern == True:
             continue
 
@@ -160,24 +159,30 @@ def ade_preprocess(data, dataset):
 
 
 def dataloader(args, ner2idx, rel2idx):
-    path = "data/" + args.data
+    path = "data/ADE"
+    if args.data == "both":
+        raw_ade_data = json_load(path, "ade_triples.json")
+        raw_n2c2_data = json_load(path, "n2c2_triples.json")
+        random.shuffle(raw_ade_data)
+        random.shuffle(raw_n2c2_data)
+        split = int(0.1 * len(raw_ade_data))
 
-    raw_ade_data = json_load(path, "ade_triples.json")
-    raw_n2c2_data = json_load(path, "n2c2_triples.json")
-    random.shuffle(raw_ade_data)
-    random.shuffle(raw_n2c2_data)
-    data = raw_ade_data
-    random.shuffle(data)
-    split = int(0.1 * len(data))
+        train_data = raw_ade_data[2 * split :] + raw_n2c2_data
+        random.shuffle(train_data)
+        test_data = raw_ade_data[:split]
+        dev_data = raw_ade_data[split : 2 * split]
+    else:
+        raw_ade_data = json_load(path, "ade_triples.json")
+        random.shuffle(raw_ade_data)
+        split = int(0.1 * len(raw_ade_data))
 
-    train_data = data[2 * split :] + raw_n2c2_data
-    random.shuffle(train_data)
-    test_data = data[:split]
-    dev_data = data[split : 2 * split]
+        train_data = raw_ade_data[2 * split :]
+        test_data = raw_ade_data[:split]
+        dev_data = raw_ade_data[split : 2 * split]
 
-    train_data = ade_preprocess(train_data, args.data)
-    test_data = ade_preprocess(test_data, args.data)
-    dev_data = ade_preprocess(dev_data, args.data)
+    train_data = ade_preprocess(train_data)
+    test_data = ade_preprocess(test_data)
+    dev_data = ade_preprocess(dev_data)
 
     train_dataset = dataprocess(train_data, args.embed_mode, args.max_seq_len)
     test_dataset = dataprocess(test_data, args.embed_mode, args.max_seq_len)
@@ -207,54 +212,6 @@ def dataloader(args, ner2idx, rel2idx):
     )
 
     return train_batch, test_batch, dev_batch
-
-
-def dataloader_10fold(args, ner2idx, rel2idx, i):
-    path = "data/" + args.data
-
-    raw_ade_data = json_load(path, "ade_triples.json")
-    raw_n2c2_data = json_load(path, "n2c2_triples.json")
-    random.shuffle(raw_ade_data)
-    random.shuffle(raw_n2c2_data)
-    data = raw_ade_data
-    random.shuffle(data)
-    split = int(0.1 * len(data))
-    if i == 0:
-        train_data = data[split:] + raw_n2c2_data
-        random.shuffle(train_data)
-        dev_data = data[:split]
-    elif i == 9:
-        train_data = data[: 9 * split] + raw_n2c2_data
-        random.shuffle(train_data)
-        dev_data = data[9 * split :]
-    else:
-        dev_data = data[i * split : (i + 1) * split]
-        train_data = data[: i * split] + data[(i + 1) * split :] + raw_n2c2_data
-        random.shuffle(train_data)
-
-    train_data = ade_preprocess(train_data, args.data)
-    dev_data = ade_preprocess(dev_data, args.data)
-
-    train_dataset = dataprocess(train_data, args.embed_mode, args.max_seq_len)
-    dev_dataset = dataprocess(dev_data, args.embed_mode, args.max_seq_len)
-    collate_fn = collater(ner2idx, rel2idx)
-
-    train_batch = DataLoader(
-        dataset=train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        pin_memory=True,
-        collate_fn=collate_fn,
-    )
-    dev_batch = DataLoader(
-        dataset=dev_dataset,
-        batch_size=args.eval_batch_size,
-        shuffle=False,
-        pin_memory=True,
-        collate_fn=collate_fn,
-    )
-
-    return train_batch, dev_batch
 
 
 def load_data(args):

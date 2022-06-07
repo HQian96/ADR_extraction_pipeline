@@ -172,7 +172,7 @@ if __name__ == "__main__":
     model = classifier(input_size, args)
     model.to(device)
     bce = nn.BCELoss()
-    optimizer = optim.Adam(
+    optimizer = optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay
     )
     best_result = 0

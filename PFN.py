@@ -100,7 +100,9 @@ def set_seed(seed):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", default="ADE", type=str, help="which dataset to use")
+    parser.add_argument(
+        "--data", default="both", type=str, help="which dataset to use in training"
+    )
 
     parser.add_argument(
         "--epoch", default=100, type=int, help="number of training epoch"
@@ -125,14 +127,6 @@ if __name__ == "__main__":
         default=10,
         type=int,
         help="number of samples in one testing batch",
-    )
-
-    parser.add_argument(
-        "--do_train", action="store_true", help="whether or not to train from scratch"
-    )
-
-    parser.add_argument(
-        "--do_eval", action="store_true", help="whether or not to evaluate the model"
     )
 
     parser.add_argument(
@@ -213,119 +207,117 @@ if __name__ == "__main__":
     )
     model_file = args.output_file + ".pt"
 
-    with open("data/" + args.data + "/ner2idx.json", "r") as f:
+    with open("data/ADE/ner2idx.json", "r") as f:
         ner2idx = json.load(f)
-    with open("data/" + args.data + "/rel2idx.json", "r") as f:
+    with open("data/ADE/rel2idx.json", "r") as f:
         rel2idx = json.load(f)
 
     train_batch, test_batch, dev_batch = dataloader(args, ner2idx, rel2idx)
 
-    if args.do_train:
-        logger.info("------Training------")
-        if args.embed_mode == "albert":
-            input_size = 4096
-        elif args.embed_mode == "biolinkbert":
-            input_size = 1024
-        else:
-            input_size = 768
+    logger.info("------Training------")
+    if args.embed_mode == "albert":
+        input_size = 4096
+    elif args.embed_mode == "biolinkbert":
+        input_size = 1024
+    else:
+        input_size = 768
 
-        model = PFNn(args, input_size, ner2idx, rel2idx)
-        model.to(device)
+    model = PFNn(args, input_size, ner2idx, rel2idx)
+    model.to(device)
 
-        optimizer = optim.Adam(
-            model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+    optimizer = optim.AdamW(
+        model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+    )
+
+    if args.eval_metric == "micro":
+        metric = micro(rel2idx, ner2idx)
+    else:
+        metric = macro(rel2idx, ner2idx)
+
+    BCEloss = loss()
+    best_result = 0
+    triple_best = None
+    entity_best = None
+
+    for epoch in range(args.epoch):
+        steps, train_loss = 0, 0
+        model.train()
+        for data in tqdm(train_batch):
+
+            steps += 1
+            optimizer.zero_grad()
+
+            text = data[0]
+            ner_label = data[1].to(device)
+            re_head_label = data[2].to(device)
+            re_tail_label = data[3].to(device)
+            mask = data[-1].to(device)
+
+            ner_pred, re_head_pred, re_tail_pred = model(text, mask)
+            loss = BCEloss(
+                ner_pred,
+                ner_label,
+                re_head_pred,
+                re_tail_pred,
+                re_head_label,
+                re_tail_label,
+            )
+
+            loss.backward()
+
+            train_loss += loss.item()
+            torch.nn.utils.clip_grad_norm_(
+                parameters=model.parameters(), max_norm=args.clip
+            )
+            optimizer.step()
+
+            if steps % args.steps == 0:
+                logger.info(
+                    "Epoch: {}, step: {} / {}, loss = {:.4f}".format(
+                        epoch, steps, len(train_batch), train_loss / steps
+                    )
+                )
+
+        logger.info("------ Training Set Results ------")
+        logger.info("loss : {:.4f}".format(train_loss / steps))
+
+        model.eval()
+        logger.info("------ Testing ------")
+        dev_triple, dev_entity, dev_loss = evaluate(
+            dev_batch, rel2idx, ner2idx, args, "dev"
         )
+        test_triple, test_entity, test_loss = evaluate(
+            test_batch, rel2idx, ner2idx, args, "test"
+        )
+        average_f1 = dev_triple["f"] + dev_entity["f"]
 
-        if args.eval_metric == "micro":
-            metric = micro(rel2idx, ner2idx)
-        else:
-            metric = macro(rel2idx, ner2idx)
-
-        BCEloss = loss()
-        best_result = 0
-        triple_best = None
-        entity_best = None
-
-        for epoch in range(args.epoch):
-            steps, train_loss = 0, 0
-            model.train()
-            for data in tqdm(train_batch):
-
-                steps += 1
-                optimizer.zero_grad()
-
-                text = data[0]
-                ner_label = data[1].to(device)
-                re_head_label = data[2].to(device)
-                re_tail_label = data[3].to(device)
-                mask = data[-1].to(device)
-
-                ner_pred, re_head_pred, re_tail_pred = model(text, mask)
-                loss = BCEloss(
-                    ner_pred,
-                    ner_label,
-                    re_head_pred,
-                    re_tail_pred,
-                    re_head_label,
-                    re_tail_label,
-                )
-
-                loss.backward()
-
-                train_loss += loss.item()
-                torch.nn.utils.clip_grad_norm_(
-                    parameters=model.parameters(), max_norm=args.clip
-                )
-                optimizer.step()
-
-                if steps % args.steps == 0:
-                    logger.info(
-                        "Epoch: {}, step: {} / {}, loss = {:.4f}".format(
-                            epoch, steps, len(train_batch), train_loss / steps
-                        )
-                    )
-
-            logger.info("------ Training Set Results ------")
-            logger.info("loss : {:.4f}".format(train_loss / steps))
-
-            if args.do_eval:
-                model.eval()
-                logger.info("------ Testing ------")
-                dev_triple, dev_entity, dev_loss = evaluate(
-                    dev_batch, rel2idx, ner2idx, args, "dev"
-                )
-                test_triple, test_entity, test_loss = evaluate(
-                    test_batch, rel2idx, ner2idx, args, "test"
-                )
-                average_f1 = dev_triple["f"] + dev_entity["f"]
-
-                if epoch == 0 or average_f1 > best_result:
-                    best_result = average_f1
-                    triple_best = test_triple
-                    entity_best = test_entity
-                    torch.save(model.state_dict(), output_dir + "/" + model_file)
-                    logger.info("Best result on dev saved!!!")
-
-                saved_file.save(
-                    "{} \t {:.4f} \t {:.4f} \t {:.4f} \t {:.4f} \t {:.4f} \t {:.4f} \t {:.4f}".format(
-                        epoch,
-                        train_loss / steps,
-                        dev_loss,
-                        test_loss,
-                        dev_entity["f"],
-                        dev_triple["f"],
-                        test_entity["f"],
-                        test_triple["f"],
-                    )
-                )
+        if epoch == 0 or average_f1 > best_result:
+            best_result = average_f1
+            triple_best = test_triple
+            entity_best = test_entity
+            torch.save(model.state_dict(), output_dir + "/" + model_file)
+            logger.info("Best result on dev saved!!!")
 
         saved_file.save(
-            "best test result ner-p: {:.4f} \t ner-r: {:.4f} \t ner-f: {:.4f} \t re-p: {:.4f} \t re-r: {:.4f} \t re-f: {:.4f} ".format(
-                entity_best["p"],
-                entity_best["r"],
-                entity_best["f"],
-                triple_best["p"],
-                triple_best["r"],
-                triple_best["f"],
+            "{} \t {:.4f} \t {:.4f} \t {:.4f} \t {:.4f} \t {:.4f} \t {:.4f} \t {:.4f}".format(
+                epoch,
+                train_loss / steps,
+                dev_loss,
+                test_loss,
+                dev_entity["f"],
+                dev_triple["f"],
+                test_entity["f"],
+                test_triple["f"],
             )
         )
+
+    saved_file.save(
+        "best test result ner-p: {:.4f} \t ner-r: {:.4f} \t ner-f: {:.4f} \t re-p: {:.4f} \t re-r: {:.4f} \t re-f: {:.4f} ".format(
+            entity_best["p"],
+            entity_best["r"],
+            entity_best["f"],
+            triple_best["p"],
+            triple_best["r"],
+            triple_best["f"],
+        )
+    )
