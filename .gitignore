@@ -1,0 +1,4 @@
+*.sh
+save/*/*
+**/__pycache__
+*.out
